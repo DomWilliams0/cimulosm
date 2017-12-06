@@ -1,6 +1,5 @@
 use libc::*;
-use std::ptr;
-use std::ffi;
+use std::{self, ffi, ptr, fs};
 use error::*;
 
 #[repr(C)]
@@ -163,19 +162,39 @@ pub struct LandUse {
 extern {
     fn parse_osm_from_buffer(buffer: *const c_void, len: size_t, out: *mut OsmWorld) -> i32;
     fn free_world(world: *mut OsmWorld);
+
+    #[no_mangle]
+    static mut err_stream: *mut FILE;
 }
 
 pub fn parse_osm(xml: String) -> SimResult<World> {
-    let len = xml.len();
-    let cstr = ffi::CString::new(xml)?;
-    let mut osm_world = OsmWorld::default();
+    fn safe_wrapper(xml: String) -> SimResult<World> {
+        let len = xml.len();
+        let cstr = ffi::CString::new(xml)?;
+        let mut osm_world = OsmWorld::default();
 
-    match unsafe {
-        parse_osm_from_buffer(cstr.as_ptr() as *const _, len as size_t, &mut osm_world as *mut _)
-    } {
-        0 => Ok(World::from(osm_world)),
-        e => Err(ErrorKind::OsmParse(e).into())
+        match unsafe {
+            parse_osm_from_buffer(cstr.as_ptr() as *const _, len as size_t, &mut osm_world as *mut _)
+        } {
+            0 => Ok(World::from(osm_world)),
+            e => Err(ErrorKind::OsmParse(e).into())
+        }
     }
+
+    let devnull;
+    unsafe {
+        devnull = fopen(c_str!("/dev/null").as_ptr(), c_str!("w").as_ptr());
+        err_stream = devnull;
+    }
+
+    let res = safe_wrapper(xml);
+
+    unsafe {
+        fclose(devnull);
+        err_stream = ptr::null_mut();
+    }
+
+    res
 }
 
 /*
