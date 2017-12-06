@@ -5,3 +5,4 @@ authors = ["Dom Williams <me@domwillia.ms>"]
 
 [dependencies]
 sfml = "0.14.0"
+error-chain = "0.11.0"

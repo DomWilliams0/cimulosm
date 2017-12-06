@@ -1,9 +1,28 @@
 extern crate sfml;
 
+#[macro_use]
+extern crate error_chain;
+
 use sfml::graphics::*;
 use sfml::window::*;
 
+mod world;
+mod error;
+
+use world::*;
+
 fn main() {
+    test_chunk_loading();
+}
+
+fn test_chunk_loading() -> error::SimResult<()> {
+    let w = World::new(LatLon::new(52.450817, -1.930513));
+    let a = w.request_chunk(0, 0)?;
+    let b = w.request_chunk(0, 1)?;
+    Ok(())
+}
+
+fn start_renderer() {
     let mut window = RenderWindow::new(
         (300, 300),
         "Hiya",
