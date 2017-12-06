@@ -1,0 +1,3 @@
+[submodule "lib/openstreetmap-fun"]
+	path = lib/openstreetmap-fun
+	url = https://github.com/DomWilliams0/openstreetmap-fun

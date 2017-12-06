@@ -1,4 +1,5 @@
 extern crate sfml;
+extern crate libc;
 
 #[macro_use]
 extern crate error_chain;
@@ -8,11 +9,17 @@ use sfml::window::*;
 
 mod world;
 mod error;
+mod parser;
 
 use world::*;
 
 fn main() {
-    test_chunk_loading();
+    test_ffi();
+}
+
+fn test_ffi() {
+    let w = parser::test_from_file("/home/dom/dev/osm-c/xmls/home.xml");
+    println!("{:?}", w)
 }
 
 fn test_chunk_loading() -> error::SimResult<()> {
