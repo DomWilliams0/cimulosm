@@ -1,5 +1,4 @@
 use std::process::Command;
-use std::path::Path;
 
 fn main() {
     let out = std::env::var("OUT_DIR").unwrap();

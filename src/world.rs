@@ -41,10 +41,10 @@ impl World {
             l
         };
 
-        let (min_lat, max_lat) = (centre_corner.lat + (CHUNK_LAT * y as f64),
-                                  centre_corner.lat + (CHUNK_LAT * (y + 1) as f64));
-        let (min_lon, max_lon) = (centre_corner.lon + (CHUNK_LON * x as f64),
-                                  centre_corner.lon + (CHUNK_LON * (x + 1) as f64));
+        let (min_lat, max_lat) = (centre_corner.lat + (CHUNK_LAT * f64::from(y)),
+                                  centre_corner.lat + (CHUNK_LAT * f64::from(y + 1)));
+        let (min_lon, max_lon) = (centre_corner.lon + (CHUNK_LON * f64::from(x)),
+                                  centre_corner.lon + (CHUNK_LON * f64::from(x + 1)));
 
         // TODO request
 
