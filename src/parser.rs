@@ -71,7 +71,7 @@ impl<T> Default for OsmVec<T> {
     }
 }
 
-fn convert_vec<T, U>(orig: OsmVec<T>) -> Vec<U>
+fn convert_vec<T, U>(orig: &OsmVec<T>) -> Vec<U>
     where
         U: From<T>
 {
@@ -88,13 +88,13 @@ impl From<OsmRoad> for Road {
         let name = if r.name.is_null() {
             String::new()
         } else {
-            let cname = unsafe {ffi::CStr::from_ptr(r.name)};
+            let cname = unsafe { ffi::CStr::from_ptr(r.name) };
             cname.to_str().unwrap().to_owned()
         };
 
         Self {
             road_type: r.road_type,
-            segments: convert_vec(r.segments),
+            segments: convert_vec(&r.segments),
             name
         }
     }
@@ -104,7 +104,7 @@ impl From<OsmLandUse> for LandUse {
     fn from(lu: OsmLandUse) -> Self {
         Self {
             land_use_type: lu.land_use_type,
-            points: convert_vec(lu.points),
+            points: convert_vec(&lu.points),
         }
     }
 }
@@ -122,9 +122,15 @@ impl From<OsmWorld> for World {
         World {
             width: w.bounds[0],
             height: w.bounds[1],
-            roads: convert_vec(w.roads),
-            land_uses: convert_vec(w.land_uses)
+            roads: convert_vec(&w.roads),
+            land_uses: convert_vec(&w.land_uses)
         }
+    }
+}
+
+impl Drop for OsmWorld {
+    fn drop(&mut self) {
+        unsafe { free_world(self as *mut _) };
     }
 }
 
@@ -145,6 +151,7 @@ pub struct LandUse {
 #[link_name = "osm"]
 extern {
     fn parse_osm_from_file(path: *const c_char, out: *mut OsmWorld) -> i32;
+    fn free_world(world: *mut OsmWorld);
 }
 
 pub fn test_from_file(path: &str) -> Result<World, i32> {
