@@ -19,6 +19,7 @@ fn test_chunk_loading() -> error::SimResult<()> {
     let w = World::new(LatLon::new(52.450817, -1.930513));
     let a = w.request_chunk(0, 0)?;
     let b = w.request_chunk(0, 1)?;
+    let b = w.request_chunk(2, 2)?;
     Ok(())
 }
 
