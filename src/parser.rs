@@ -1,6 +1,7 @@
 use libc::*;
 use std::ptr;
 use std::ffi;
+use error::*;
 
 #[repr(C)]
 #[derive(Debug)]
@@ -67,6 +68,16 @@ impl<T> Default for OsmVec<T> {
             data: ptr::null_mut(),
             length: 0,
             capacity: 0
+        }
+    }
+}
+
+impl Default for OsmWorld {
+    fn default() -> Self {
+        Self {
+            bounds: [0, 0],
+            roads: Default::default(),
+            land_uses: Default::default(),
         }
     }
 }
@@ -150,11 +161,25 @@ pub struct LandUse {
 
 #[link_name = "osm"]
 extern {
-    fn parse_osm_from_file(path: *const c_char, out: *mut OsmWorld) -> i32;
+    fn parse_osm_from_buffer(buffer: *const c_void, len: size_t, out: *mut OsmWorld) -> i32;
     fn free_world(world: *mut OsmWorld);
 }
 
-pub fn test_from_file(path: &str) -> Result<World, i32> {
+pub fn parse_osm(xml: String) -> SimResult<World> {
+    let len = xml.len();
+    let cstr = ffi::CString::new(xml)?;
+    let mut osm_world = OsmWorld::default();
+
+    match unsafe {
+        parse_osm_from_buffer(cstr.as_ptr() as *const _, len as size_t, &mut osm_world as *mut _)
+    } {
+        0 => Ok(World::from(osm_world)),
+        e => Err(ErrorKind::OsmParse(e).into())
+    }
+}
+
+/*
+fn test_from_file(path: &str) -> Result<World, i32> {
     let c_string = match ffi::CString::new(path) {
         Ok(s) => s,
         Err(_) => return Err(1)
@@ -178,3 +203,4 @@ pub fn test_from_file(path: &str) -> Result<World, i32> {
         n => Err(n)
     }
 }
+*/

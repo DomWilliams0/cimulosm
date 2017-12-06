@@ -1,5 +1,6 @@
 extern crate sfml;
 extern crate libc;
+extern crate reqwest;
 
 #[macro_use]
 extern crate error_chain;
@@ -14,13 +15,9 @@ mod parser;
 use world::*;
 
 fn main() {
-    test_ffi();
+    test_chunk_loading();
 }
 
-fn test_ffi() {
-    let w = parser::test_from_file("/home/dom/dev/osm-c/xmls/home.xml");
-    println!("{:?}", w)
-}
 
 fn test_chunk_loading() -> error::SimResult<()> {
     let w = World::new(LatLon::new(52.450817, -1.930513));

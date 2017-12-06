@@ -1,4 +1,7 @@
 use error::*;
+use std::io::Read;
+use reqwest;
+use parser;
 
 const CHUNK_LAT: f64 = 0.0088; // y
 const CHUNK_LON: f64 = 0.0144; // x
@@ -46,12 +49,27 @@ impl World {
         let (min_lon, max_lon) = (centre_corner.lon + (CHUNK_LON * f64::from(x)),
                                   centre_corner.lon + (CHUNK_LON * f64::from(x + 1)));
 
-        // TODO request
+        let parsed_bbox = request_bbox(min_lat, max_lat, min_lon, max_lon);
+        println!("bbox is {:?}", parsed_bbox);
 
-//        println!("{},{}", min_lat, min_lon);
-//        println!("{},{}", min_lat, max_lon);
-//        println!("{},{}", max_lat, max_lon);
-//        println!("{},{}", max_lat, min_lon);
-        Ok(Chunk{})
+        Ok(Chunk {})
     }
+}
+
+fn request_bbox(min_lat: f64, max_lat: f64, min_lon: f64, max_lon: f64)
+                -> SimResult<parser::World> {
+    let mut xml = String::new();
+    let mut resp = reqwest::get(
+        format!("http://overpass-api.de/api/map?bbox={},{},{},{}",
+                min_lon, min_lat, max_lon, max_lat).as_str())?;
+
+    {
+        let status = resp.status();
+        if !status.is_success() {
+            return Err(ErrorKind::OsmRequest(resp.status().as_u16() as i32).into());
+        }
+    }
+
+    resp.read_to_string(&mut xml)?;
+    parser::parse_osm(xml)
 }
