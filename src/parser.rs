@@ -1,15 +1,18 @@
 use libc::*;
-use std::{self, ffi, ptr, fs};
+use std::{self, ffi, ptr};
+use std::collections::HashMap;
 use error::*;
+use world::{Id, Road, LandUse};
 
 #[repr(C)]
 #[derive(Debug)]
-struct Point {
+pub struct Point {
     x: u32,
     y: u32
 }
 
 #[repr(C)]
+#[derive(Debug)]
 struct OsmVec<T> {
     data: *mut T,
     length: u32,
@@ -47,17 +50,37 @@ pub enum LandUseType {
     Water
 }
 
+trait OsmIdHolder {
+    fn id(&self) -> Id;
+}
+
 #[repr(C)]
+#[derive(Debug)]
 struct OsmRoad {
+    id: Id,
     road_type: RoadType,
     segments: OsmVec<Point>,
     name: *const c_char
 }
 
 #[repr(C)]
+#[derive(Debug)]
 struct OsmLandUse {
+    id: Id,
     land_use_type: LandUseType,
     points: OsmVec<Point>,
+}
+
+impl OsmIdHolder for OsmRoad {
+    fn id(&self) -> Id {
+        self.id
+    }
+}
+
+impl OsmIdHolder for OsmLandUse {
+    fn id(&self) -> Id {
+        self.id
+    }
 }
 
 
@@ -79,6 +102,19 @@ impl Default for OsmWorld {
             land_uses: Default::default(),
         }
     }
+}
+
+fn convert_vec_to_map<T, U>(orig: &OsmVec<T>) -> HashMap<Id, U>
+    where
+        T: OsmIdHolder,
+        U: From<T>
+{
+    let mut m = HashMap::<Id, U>::with_capacity(orig.length as usize);
+    for i in 0..orig.length {
+        let d = unsafe { ptr::read(orig.data.offset(i as isize)) };
+        m.insert(d.id(), From::from(d));
+    }
+    m
 }
 
 fn convert_vec<T, U>(orig: &OsmVec<T>) -> Vec<U>
@@ -120,20 +156,20 @@ impl From<OsmLandUse> for LandUse {
 }
 
 #[derive(Debug)]
-pub struct World {
-    width: u32,
-    height: u32,
-    roads: Vec<Road>,
-    land_uses: Vec<LandUse>
+pub struct PartialWorld {
+    pub width: u32,
+    pub height: u32,
+    pub roads: HashMap<Id, Road>,
+    pub land_uses: HashMap<Id, LandUse>
 }
 
-impl From<OsmWorld> for World {
+impl From<OsmWorld> for PartialWorld {
     fn from(w: OsmWorld) -> Self {
-        World {
+        PartialWorld {
             width: w.bounds[0],
             height: w.bounds[1],
-            roads: convert_vec(&w.roads),
-            land_uses: convert_vec(&w.land_uses)
+            roads: convert_vec_to_map(&w.roads),
+            land_uses: convert_vec_to_map(&w.land_uses)
         }
     }
 }
@@ -144,20 +180,6 @@ impl Drop for OsmWorld {
     }
 }
 
-#[derive(Debug)]
-pub struct Road {
-    road_type: RoadType,
-    segments: Vec<Point>,
-    name: String
-}
-
-#[derive(Debug)]
-pub struct LandUse {
-    land_use_type: LandUseType,
-    points: Vec<Point>,
-}
-
-
 #[link_name = "osm"]
 extern {
     fn parse_osm_from_buffer(buffer: *const c_void, len: size_t, out: *mut OsmWorld) -> i32;
@@ -167,8 +189,8 @@ extern {
     static mut err_stream: *mut FILE;
 }
 
-pub fn parse_osm(xml: String) -> SimResult<World> {
-    fn safe_wrapper(xml: String) -> SimResult<World> {
+pub fn parse_osm(xml: String) -> SimResult<PartialWorld> {
+    fn safe_wrapper(xml: String) -> SimResult<PartialWorld> {
         let len = xml.len();
         let cstr = ffi::CString::new(xml)?;
         let mut osm_world = OsmWorld::default();
@@ -176,14 +198,16 @@ pub fn parse_osm(xml: String) -> SimResult<World> {
         match unsafe {
             parse_osm_from_buffer(cstr.as_ptr() as *const _, len as size_t, &mut osm_world as *mut _)
         } {
-            0 => Ok(World::from(osm_world)),
+            0 => Ok(PartialWorld::from(osm_world)),
             e => Err(ErrorKind::OsmParse(e).into())
         }
     }
 
+    let str_devnull = c_str!("/dev/null").as_ptr();
+    let str_w = c_str!("w").as_ptr();
     let devnull;
     unsafe {
-        devnull = fopen(c_str!("/dev/null").as_ptr(), c_str!("w").as_ptr());
+        devnull = fopen(str_devnull, str_w);
         err_stream = devnull;
     }
 
