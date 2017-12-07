@@ -47,7 +47,7 @@ pub struct World {
     road_refs: HashMap<Id, u8>,
 
     // TODO use quadtree?
-    loaded_roads: Vec<Road>
+    pub loaded_roads: Vec<Road>
 }
 
 pub struct Chunk {
@@ -91,7 +91,7 @@ impl World {
         let mut w: parser::PartialWorld = request_bbox(min_lat, max_lat, min_lon, max_lon)?;
 
         // create chunk
-        let mut chunk = Chunk {
+        let chunk = Chunk {
             id: ChunkId { x, y },
             road_refs: w.roads.keys().cloned().collect()
         };
