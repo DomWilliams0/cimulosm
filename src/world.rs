@@ -121,7 +121,7 @@ impl World {
 fn fetch_xml(min_lat: f64, max_lat: f64, min_lon: f64, max_lon: f64) -> SimResult<String> {
     let cache = {
         let mut p = env::temp_dir();
-        p.push(format!("chunk-cache--{}-{}-{}-{}.osm", min_lat, max_lat, min_lon, max_lon));
+        p.push(format!("chunk_cache_{}_{}_{}_{}.osm", min_lat, max_lat, min_lon, max_lon));
         p
     };
 
