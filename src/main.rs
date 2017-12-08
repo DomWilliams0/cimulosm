@@ -1,6 +1,7 @@
+#![allow(dead_code)]
 extern crate sfml;
 extern crate libc;
-extern crate reqwest;
+extern crate chunk_req;
 
 #[macro_use]
 extern crate error_chain;

@@ -1,5 +1,4 @@
 use std::io;
-use reqwest;
 use std::ffi;
 
 error_chain! {
@@ -10,13 +9,12 @@ error_chain! {
 
     foreign_links {
         Io(io::Error);
-        Reqwest(reqwest::Error);
         Ffi(ffi::NulError);
     }
 
     errors {
-            OsmRequest(status_code: i32) {
-                display("osm request failed with status code {}", status_code)
+            OsmRequest(reason: String) {
+                display("osm request failed: {}", reason)
             }
 
             OsmParse(err: i32) {

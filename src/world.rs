@@ -1,6 +1,6 @@
 use error::*;
 use std::io::{Read, Write};
-use reqwest;
+use chunk_req;
 use parser;
 use std::{fs, env};
 use std::collections::HashMap;
@@ -132,18 +132,7 @@ fn fetch_xml(min_lat: f64, max_lat: f64, min_lon: f64, max_lon: f64) -> SimResul
         Ok(contents)
     } else {
         println!("Requesting chunk");
-        let mut resp = reqwest::get(
-            format!("http://overpass-api.de/api/map?bbox={},{},{},{}",
-                    min_lon, min_lat, max_lon, max_lat).as_str())?;
-
-        let status = resp.status();
-        if !status.is_success() {
-            return Err(ErrorKind::OsmRequest(resp.status().as_u16() as i32).into());
-        }
-
-        let mut xml = String::new();
-        resp.read_to_string(&mut xml)?;
-
+        let xml = chunk_req::request_osm(min_lat, max_lat, min_lon, max_lon)?;
         fs::File::create(cache)?.write_all(xml.as_bytes())?;
 
         Ok(xml)

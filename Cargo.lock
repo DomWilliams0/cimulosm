@@ -94,6 +94,13 @@ version = "0.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 
 [[package]]
+name = "chunk_req"
+version = "0.1.0"
+dependencies = [
+ "reqwest 0.8.1 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
 name = "core-foundation"
 version = "0.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -648,9 +655,9 @@ name = "sim"
 version = "0.1.0"
 dependencies = [
  "c_str_macro 1.0.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "chunk_req 0.1.0",
  "error-chain 0.11.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "libc 0.2.34 (registry+https://github.com/rust-lang/crates.io-index)",
- "reqwest 0.8.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "sfml 0.14.0 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
