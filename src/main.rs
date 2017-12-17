@@ -12,6 +12,7 @@ extern crate c_str_macro;
 use sfml::graphics::*;
 use sfml::window::*;
 use sfml::system::*;
+use std::env;
 
 mod world;
 mod error;
@@ -22,10 +23,20 @@ use error::*;
 
 const MOVE_SPEED: f64 = 5.0;
 const ZOOM_SPEED: f64 = 0.05;
-const CHUNK_SIZE: f64 = 1.0; // ???
 
 fn main() {
-    let mut world = World::new(LatLon::new(51.8972, -0.8543));
+    let origin = {
+        let var = env::var("LATLON");
+        let mut split = var.as_ref().expect("$LATLON missing in env").split(",");
+        let (lat, lon): (f64, f64) = match (split.next(), split.next()) {
+            (Some(slat), Some(slon)) => (slat.parse().expect("Bad latitude"), slon.parse().expect("Bad longitude")),
+            _ => panic!("<lat>,<lon> expected"),
+        };
+        LatLon::new(lat, lon)
+    };
+    println!("origin is set from env: {:?}", origin);
+
+    let mut world = World::new(origin);
     let renderer = Renderer::new(500, 500, &mut world);
     renderer.start().unwrap();
 }
