@@ -17,6 +17,7 @@ use std::env;
 mod world;
 mod error;
 mod parser;
+mod latlon;
 
 use world::*;
 use error::*;
@@ -27,16 +28,16 @@ const ZOOM_SPEED: f64 = 0.05;
 fn main() {
     let origin = {
         let var = env::var("LATLON");
-        let mut split = var.as_ref().expect("$LATLON missing in env").split(",");
+        let mut split = var.as_ref().expect("$LATLON missing in env").split(',');
         let (lat, lon): (f64, f64) = match (split.next(), split.next()) {
             (Some(slat), Some(slon)) => (slat.parse().expect("Bad latitude"), slon.parse().expect("Bad longitude")),
             _ => panic!("<lat>,<lon> expected"),
         };
         LatLon::new(lat, lon)
     };
-    println!("origin is set from env: {:?}", origin);
 
     let mut world = World::new(origin);
+
     let renderer = Renderer::new(500, 500, &mut world);
     renderer.start().unwrap();
 }
@@ -45,8 +46,8 @@ fn main() {
 fn test_chunk_loading() -> error::SimResult<()> {
     let mut w = World::new(LatLon::new(51.8972, -0.8543));
 
-    let first = w.request_chunk(0, 0)?;
-    let second = w.request_chunk(1, 0)?;
+    let _first = w.request_chunk(0, 0)?;
+    let _second = w.request_chunk(1, 0)?;
 
     Ok(())
 }
@@ -55,7 +56,8 @@ struct Renderer<'a> {
     window: RenderWindow,
     world: &'a mut World,
 
-    render_cache: Vec<Vertex>
+    render_cache: Vec<Vertex>,
+    chunk_size: Vector2i,
 }
 
 impl<'a> Renderer<'a> {
@@ -67,21 +69,26 @@ impl<'a> Renderer<'a> {
             &Default::default()
         );
         window.set_framerate_limit(60);
+        let chunk_size = {
+            let (tl, br) = latlon::get_chunk_bounds(&world.origin, (0, 0));
+            let tl_pix = parser::convert_latlon(tl.lat, tl.lon);
+            let br_pix = parser::convert_latlon(br.lat, br.lon);
+            Vector2i::new(
+                br_pix.x - tl_pix.x,
+                br_pix.y - tl_pix.y,
+                )
+        };
 
         Self {
             window,
             world,
-            render_cache: Vec::new()
+            render_cache: Vec::new(),
+            chunk_size
         }
     }
 
     fn start(mut self) -> SimResult<()> {
         let mut cam = CameraChange::new(self.window.size());
-        let test = {
-            let mut c = CircleShape::new(10.0, 20);
-            c.set_fill_color(&Color::RED);
-            c
-        };
 
         self.world.request_chunk(0, 0)?;
 
@@ -101,14 +108,27 @@ impl<'a> Renderer<'a> {
 
             self.window.clear(&background_colour);
             self.render_world();
-            self.window.draw(&test);
             self.window.display();
         }
     }
 
     fn render_world(&mut self) {
-        for ref r in &self.world.loaded_roads {
-            let colour = Color::RED;
+        fn get_road_colour(road_type: &parser::RoadType) -> Color {
+            match *road_type {
+                parser::RoadType::Motorway |
+                parser::RoadType::Primary |
+                parser::RoadType::Secondary => Color::rgb(255, 50, 50), // red
+                parser::RoadType::Minor => Color::rgb(50, 50, 255), // blue
+                parser::RoadType::Pedestrian => Color::rgb(100, 100, 100), // grey
+                parser::RoadType::Residential => Color::rgb(50, 255, 50), // green
+                parser::RoadType::Unknown |
+                _ => Color::rgb(255, 255, 255), // white
+            }
+        }
+
+
+        for r in &self.world.loaded_roads {
+            let colour = get_road_colour(&r.road_type);
             self.render_cache.clear();
             self.render_cache.extend(
                 r.segments.iter().map(|s| {
@@ -116,6 +136,27 @@ impl<'a> Renderer<'a> {
                 })
             );
             self.window.draw_primitives(&self.render_cache, PrimitiveType::LineStrip, RenderStates::default());
+        }
+
+        // chunk outlines
+        let mut rect = {
+            let mut r = RectangleShape::with_size(
+                Vector2f::new(self.chunk_size.x as f32, self.chunk_size.y as f32)
+            );
+
+            r.set_outline_thickness(1.0);
+            r.set_outline_color(&Color::WHITE);
+            r.set_fill_color(&Color::TRANSPARENT);
+            r
+        };
+        for x in -3..3 {
+            for y in -3..3 {
+                rect.set_position((
+                    (x * self.chunk_size.x) as f32,
+                    (y * self.chunk_size.y) as f32)
+                );
+                self.window.draw(&rect);
+            }
         }
     }
 }
@@ -173,7 +214,5 @@ impl CameraChange {
         view.set_size(Vector2f::new(self.w as f32 * self.z as f32, self.h as f32 * self.z as f32));
         view.move_((self.x as f32, self.y as f32));
         window.set_view(&view);
-
-        println!("viewport {:?}", view.size());
     }
 }

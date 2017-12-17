@@ -1,47 +1,59 @@
 use error::*;
 use std::io::{Read, Write};
-use chunk_req;
-use parser;
 use std::{fs, env};
 use std::collections::HashMap;
 
-const CHUNK_LAT: f64 = 0.0088; // y
+use chunk_req;
+use parser;
+use latlon;
 
-const CHUNK_LON: f64 = 0.0144; // x
+//const CHUNK_LAT: f64 = 0.0088; // y
+//
+//const CHUNK_LON: f64 = 0.0144; // x
+//
+//const CHUNK_PAD: f64 = 0.2;
+//const CHUNK_PAD_LAT: f64 = CHUNK_LAT * CHUNK_PAD;
+//const CHUNK_PAD_LON: f64 = CHUNK_LON * CHUNK_PAD;
 
-const CHUNK_PAD: f64 = 0.2;
-const CHUNK_PAD_LAT: f64 = CHUNK_LAT * CHUNK_PAD;
-const CHUNK_PAD_LON: f64 = CHUNK_LON * CHUNK_PAD;
+#[derive(Debug, Clone, Copy)]
+pub struct Pixel {
+    pub x: i32,
+    pub y: i32
+}
 
 pub type Id = i64;
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct LatLon {
-    lat: f64,
-    lon: f64
+    pub lat: f64,
+    pub lon: f64
 }
 
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 struct ChunkId {
     x: i32,
     y: i32,
 }
 
+pub trait PixelVecHolder {
+    fn pixels(&mut self) -> &mut Vec<Pixel>;
+}
+
 #[derive(Debug)]
 pub struct Road {
     pub road_type: parser::RoadType,
-    pub segments: Vec<parser::Point>,
+    pub segments: Vec<Pixel>,
     pub name: String
 }
 
 #[derive(Debug)]
 pub struct LandUse {
     pub land_use_type: parser::LandUseType,
-    pub points: Vec<parser::Point>,
+    pub points: Vec<Pixel>,
 }
 
 pub struct World {
-    centre: LatLon,
+    pub origin: LatLon,
 
     // road id -> count
     road_refs: HashMap<Id, u8>,
@@ -50,9 +62,16 @@ pub struct World {
     pub loaded_roads: Vec<Road>
 }
 
+#[derive(Debug)]
 pub struct Chunk {
     id: ChunkId,
     road_refs: Vec<Id>
+}
+
+impl PixelVecHolder for Road {
+    fn pixels(&mut self) -> &mut Vec<Pixel> {
+        &mut self.segments
+    }
 }
 
 impl LatLon {
@@ -65,30 +84,18 @@ impl LatLon {
 }
 
 impl World {
-    pub fn new(mut centre: LatLon) -> World {
-        centre.lat += CHUNK_LAT / 2.0;
-        centre.lon += CHUNK_LON / 2.0;
+    pub fn new(origin: LatLon) -> World {
         World {
-            centre,
+            origin,
             road_refs: HashMap::new(),
             loaded_roads: Vec::new()
         }
     }
 
     pub fn request_chunk(&mut self, x: i32, y: i32) -> SimResult<Chunk> {
-        let centre_corner = {
-            let mut l = self.centre.clone();
-            l.lat -= CHUNK_LAT / 2.0;
-            l.lon -= CHUNK_LON / 2.0;
-            l
-        };
-
-        let (min_lat, max_lat) = (centre_corner.lat - CHUNK_PAD_LAT + (CHUNK_LAT * f64::from(y)),
-                                  centre_corner.lat + CHUNK_PAD_LAT + (CHUNK_LAT * f64::from(y + 1)));
-        let (min_lon, max_lon) = (centre_corner.lon - CHUNK_PAD_LON + (CHUNK_LON * f64::from(x)),
-                                  centre_corner.lon + CHUNK_PAD_LON + (CHUNK_LON * f64::from(x + 1)));
-
-        let mut w: parser::PartialWorld = request_bbox(min_lat, max_lat, min_lon, max_lon)?;
+        let bounds = latlon::get_chunk_bounds(&self.origin, (x, y));
+        let mut w: parser::PartialWorld = parser::parse_osm(fetch_xml(&bounds)?)?;
+        w.make_coords_relative_to(&self.origin);
 
         // create chunk
         let chunk = Chunk {
@@ -104,7 +111,6 @@ impl World {
 
             // first time load
             if *count == 0 {
-                println!("Loading road {}", id);
                 let road = w.roads.remove(&id).unwrap();
                 self.loaded_roads.push(road);
             } else {
@@ -116,12 +122,25 @@ impl World {
 
         Ok(chunk)
     }
+
+    pub fn convert_latlon_to_pixel(&self, latlon: &LatLon) -> Pixel {
+        let origin = parser::convert_latlon(self.origin.lat, self.origin.lon);
+        let point = parser::convert_latlon(
+            latlon.lat,
+            latlon.lon
+        );
+        println!("{} {} origin -> {} {}", origin.x, origin.y, point.x, point.y);
+        Pixel {
+            x: point.x - origin.x,
+            y: point.y - origin.y
+        }
+    }
 }
 
-fn fetch_xml(min_lat: f64, max_lat: f64, min_lon: f64, max_lon: f64) -> SimResult<String> {
+fn fetch_xml(bounds: &(LatLon, LatLon)) -> SimResult<String> {
     let cache = {
         let mut p = env::temp_dir();
-        p.push(format!("chunk_cache_{}_{}_{}_{}.osm", min_lat, max_lat, min_lon, max_lon));
+        p.push(format!("chunk_cache_{}_{}_{}_{}.osm", (bounds.1).lat, (bounds.0).lat, (bounds.1).lon, (bounds.0).lon));
         p
     };
 
@@ -132,14 +151,13 @@ fn fetch_xml(min_lat: f64, max_lat: f64, min_lon: f64, max_lon: f64) -> SimResul
         Ok(contents)
     } else {
         println!("Requesting chunk");
-        let xml = chunk_req::request_osm(min_lat, max_lat, min_lon, max_lon)?;
+        let xml = chunk_req::request_osm(
+            (bounds.0.lat, bounds.0.lon),
+            (bounds.1.lat, bounds.1.lon)
+            )?;
+        println!("{} bytes read", xml.len());
         fs::File::create(cache)?.write_all(xml.as_bytes())?;
 
         Ok(xml)
     }
-}
-
-fn request_bbox(min_lat: f64, max_lat: f64, min_lon: f64, max_lon: f64)
-                -> SimResult<parser::PartialWorld> {
-    parser::parse_osm(fetch_xml(min_lat, max_lat, min_lon, max_lon)?)
 }
