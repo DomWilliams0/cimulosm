@@ -109,7 +109,15 @@ impl<'a> Renderer<'a> {
                 }
             }
 
-            cam.apply(&mut self.window);
+            let chunk_changes = cam.apply(&mut self.window, self.chunk_size);
+            if !chunk_changes.is_empty() {
+                for c in chunk_changes.iter() {
+                    println!("{} {}, {}", if c.load {"LOAD"} else {"UNLOAD"}, c.x, c.y);
+                }
+                println!("----------");
+            }
+            // TODO actually load/unload
+
 
             self.window.clear(&background_colour);
             self.render_world(&mut text);
@@ -188,6 +196,23 @@ struct CameraChange {
 
     z: f64,
     dz: f64,
+
+    min_chunk: (i32, i32),
+    max_chunk: (i32, i32),
+    chunk_changes: Vec<ChunkChange>,
+}
+
+#[derive(Debug, Copy, Clone)]
+struct ChunkChange {
+    x: i32,
+    y: i32,
+    load: bool,
+}
+
+impl ChunkChange {
+    fn new(x: i32, y: i32, load: bool) -> Self {
+        ChunkChange { x, y, load }
+    }
 }
 
 impl CameraChange {
@@ -199,6 +224,9 @@ impl CameraChange {
             h: window_size.y,
             dz: 0.0,
             z: initial_zoom,
+            min_chunk: (0, 0),
+            max_chunk: (0, 0),
+            chunk_changes: Vec::new(),
         }
     }
 
@@ -220,7 +248,7 @@ impl CameraChange {
         self.h = height;
     }
 
-    fn apply(&mut self, window: &mut RenderWindow) {
+    fn apply(&mut self, window: &mut RenderWindow, chunk_size: Vector2i) -> &Vec<ChunkChange> {
         let mut view = window.view().to_owned();
 
         if self.dz != 0.0 {
@@ -233,5 +261,86 @@ impl CameraChange {
         view.set_size(Vector2f::new(self.w as f32 * self.z as f32, self.h as f32 * self.z as f32));
         view.move_((self.x as f32, self.y as f32));
         window.set_view(&view);
+
+        // chunks visible
+        {
+            self.chunk_changes.clear();
+
+            let tl = window.map_pixel_to_coords(&Vector2i::new(0, 0), &view);
+            let br = {
+                let win_size = window.size();
+                let size_i = Vector2i::new(win_size.x as i32, win_size.y as i32);
+                window.map_pixel_to_coords(&size_i, &view)
+            };
+
+            let min_x = (tl.x /  chunk_size.x as f32).floor() as i32;
+            let min_y = (tl.y /  chunk_size.y as f32).floor() as i32;
+            let max_y = (br.y /  chunk_size.y as f32).floor() as i32;
+            let max_x = (br.x /  chunk_size.x as f32).floor() as i32;
+
+            let x_min_change = min_x - self.min_chunk.0;
+            let x_max_change = max_x - self.max_chunk.0;
+            let y_min_change = min_y - self.min_chunk.1;
+            let y_max_change = max_y - self.max_chunk.1;
+
+            // just one at a time for now
+            assert!(x_min_change == 0 || x_min_change.abs() == 1);
+            assert!(x_max_change == 0 || x_max_change.abs() == 1);
+            assert!(y_max_change == 0 || y_max_change.abs() == 1);
+            assert!(y_max_change == 0 || y_max_change.abs() == 1);
+
+            if x_min_change != 0 {
+                let (x, load) = if x_min_change < 0 {
+                    (min_x, true)
+                } else {
+                    (min_x - x_min_change, false)
+                };
+
+                for y in min_y..max_y + 1 {
+                    self.chunk_changes.push(ChunkChange::new(x, y, load));
+                }
+            }
+
+            if x_max_change != 0 {
+                let (x, load) = if x_max_change > 0 {
+                    (max_x, true)
+                } else {
+                    (max_x - x_max_change, false)
+                };
+
+                for y in min_y..max_y + 1 {
+                    self.chunk_changes.push(ChunkChange::new(x, y, load));
+                }
+            }
+
+            if y_min_change != 0 {
+                let (y, load) = if y_min_change < 0 {
+                    (min_y, true)
+                } else {
+                    (min_y - y_min_change, false)
+                };
+
+                for x in min_x..max_x + 1 {
+                    self.chunk_changes.push(ChunkChange::new(x, y, load));
+                }
+            }
+
+            if y_max_change != 0 {
+                let (y, load) = if y_max_change > 0 {
+                    (max_y, true)
+                } else {
+                    (max_y - y_max_change, false)
+                };
+
+                for x in min_x..max_x + 1 {
+                    self.chunk_changes.push(ChunkChange::new(x, y, load));
+                }
+            }
+
+
+            self.min_chunk = (min_x, min_y);
+            self.max_chunk = (max_x, max_y);
+            &self.chunk_changes
+        }
     }
 }
