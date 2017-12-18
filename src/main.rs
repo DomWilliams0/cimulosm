@@ -38,7 +38,7 @@ fn main() {
 
     let mut world = World::new(origin);
 
-    let renderer = Renderer::new(500, 500, &mut world);
+    let renderer = Renderer::new(800, 500, &mut world);
     renderer.start().unwrap();
 }
 
@@ -69,6 +69,7 @@ impl<'a> Renderer<'a> {
             &Default::default()
         );
         window.set_framerate_limit(60);
+
         let chunk_size = {
             let (tl, br) = latlon::get_chunk_bounds(&world.origin, (0, 0));
             let tl_pix = parser::convert_latlon(tl.lat, tl.lon);
@@ -88,7 +89,8 @@ impl<'a> Renderer<'a> {
     }
 
     fn start(mut self) -> SimResult<()> {
-        let mut cam = CameraChange::new(self.window.size());
+        let mut cam = CameraChange::new(self.window.size(), 0.4);
+        self.centre_on_chunk(0, 0);
 
         self.world.request_chunk(0, 0)?;
 
@@ -110,6 +112,16 @@ impl<'a> Renderer<'a> {
             self.render_world();
             self.window.display();
         }
+    }
+
+    fn centre_on_chunk(&mut self, x: i32, y: i32) {
+        let mut view = self.window.view().to_owned();
+
+        let (cx, cy) = (self.chunk_size.x as f32, self.chunk_size.y as f32);
+        view.set_center(
+            (cx * x as f32 + cx / 2.0,
+             cy * y as f32 + cy / 2.0));
+        self.window.set_view(&view);
     }
 
     fn render_world(&mut self) {
@@ -149,8 +161,8 @@ impl<'a> Renderer<'a> {
             r.set_fill_color(&Color::TRANSPARENT);
             r
         };
-        for x in -3..3 {
-            for y in -3..3 {
+        for x in -2..3 {
+            for y in -2..3 {
                 rect.set_position((
                     (x * self.chunk_size.x) as f32,
                     (y * self.chunk_size.y) as f32)
@@ -173,16 +185,17 @@ struct CameraChange {
 }
 
 impl CameraChange {
-    fn new(window_size: Vector2u) -> Self {
+    fn new(window_size: Vector2u, initial_zoom: f64) -> Self {
         CameraChange {
             x: 0.0,
             y: 0.0,
             w: window_size.x,
             h: window_size.y,
             dz: 0.0,
-            z: 1.0
+            z: initial_zoom,
         }
     }
+
     fn handle_key(&mut self, key: Key, pressed: bool) {
         let mult = if pressed { 1.0 } else { 0.0 };
         match key {
