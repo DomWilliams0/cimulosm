@@ -84,7 +84,7 @@ impl<'a> Renderer<'a> {
             window,
             world,
             render_cache: Vec::new(),
-            chunk_size
+            chunk_size,
         }
     }
 
@@ -93,6 +93,9 @@ impl<'a> Renderer<'a> {
         self.centre_on_chunk(0, 0);
 
         self.world.request_chunk(0, 0)?;
+
+        let font = Font::from_file("res/ScreenMedium.ttf").expect("Could not load font");
+        let mut text = Text::new("", &font, 8);
 
         let background_colour = Color::rgb(40, 40, 50);
         loop {
@@ -109,7 +112,7 @@ impl<'a> Renderer<'a> {
             cam.apply(&mut self.window);
 
             self.window.clear(&background_colour);
-            self.render_world();
+            self.render_world(&mut text);
             self.window.display();
         }
     }
@@ -124,7 +127,7 @@ impl<'a> Renderer<'a> {
         self.window.set_view(&view);
     }
 
-    fn render_world(&mut self) {
+    fn render_world(&mut self, text: &mut Text) {
         fn get_road_colour(road_type: &parser::RoadType) -> Color {
             match *road_type {
                 parser::RoadType::Motorway |
@@ -133,7 +136,6 @@ impl<'a> Renderer<'a> {
                 parser::RoadType::Minor => Color::rgb(50, 50, 255), // blue
                 parser::RoadType::Pedestrian => Color::rgb(100, 100, 100), // grey
                 parser::RoadType::Residential => Color::rgb(50, 255, 50), // green
-                parser::RoadType::Unknown |
                 _ => Color::rgb(255, 255, 255), // white
             }
         }
@@ -168,6 +170,10 @@ impl<'a> Renderer<'a> {
                     (y * self.chunk_size.y) as f32)
                 );
                 self.window.draw(&rect);
+
+                text.set_string(&format!("{}, {}", x, y));
+                text.set_position(rect.position());
+                self.window.draw(text);
             }
         }
     }
