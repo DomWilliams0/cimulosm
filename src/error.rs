@@ -1,5 +1,6 @@
 use std::io;
 use std::ffi;
+use std::sync;
 
 error_chain! {
 
@@ -10,6 +11,7 @@ error_chain! {
     foreign_links {
         Io(io::Error);
         Ffi(ffi::NulError);
+        Sync(sync::mpsc::RecvError);
     }
 
     errors {

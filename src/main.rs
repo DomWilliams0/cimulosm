@@ -14,6 +14,7 @@ use sfml::window::*;
 use sfml::system::*;
 use std::env;
 use std::collections::HashMap;
+use std::sync::mpsc::{self, Sender, Receiver};
 
 mod world;
 mod error;
@@ -44,15 +45,6 @@ fn main() {
 }
 
 
-fn test_chunk_loading() -> error::SimResult<()> {
-    let mut w = World::new(LatLon::new(51.8972, -0.8543));
-
-    let _first = w.request_chunk(0, 0)?;
-    let _second = w.request_chunk(1, 0)?;
-
-    Ok(())
-}
-
 #[derive(Debug)]
 enum LoadState{
     Loading,
@@ -61,7 +53,13 @@ enum LoadState{
 }
 
 #[derive(Debug)]
-struct ChunkState(LoadState, f64);
+enum StateChange {
+    Counter(f64),
+    Constant
+}
+
+#[derive(Debug)]
+struct ChunkState(LoadState, StateChange);
 
 struct Renderer<'a> {
     window: RenderWindow,
@@ -70,6 +68,7 @@ struct Renderer<'a> {
     render_cache: Vec<Vertex>,
     chunk_size: Vector2i,
     chunk_states: HashMap<(i32, i32), ChunkState>,
+    load_channel: (Sender<SimResult<parser::PartialWorld>>, Receiver<SimResult<parser::PartialWorld>>),
 }
 
 impl<'a> Renderer<'a> {
@@ -98,14 +97,20 @@ impl<'a> Renderer<'a> {
             render_cache: Vec::new(),
             chunk_size,
             chunk_states: HashMap::new(),
+            load_channel: mpsc::channel(),
         }
+    }
+
+    fn request_chunk_async(&mut self, x: i32, y: i32) {
+        let sender = self.load_channel.0.clone();
+        self.world.request_chunk_async(x, y, sender);
     }
 
     fn start(mut self) -> SimResult<()> {
         let mut cam = CameraChange::new(self.window.size(), 0.4);
         self.centre_on_chunk(0, 0);
 
-        self.world.request_chunk(0, 0)?;
+        self.request_chunk_async(0, 0);
 
         let font = Font::from_file("res/ScreenMedium.ttf").expect("Could not load font");
         let mut text = Text::new("", &font, 8);
@@ -124,9 +129,12 @@ impl<'a> Renderer<'a> {
 
             // tick chunk states
             self.chunk_states.retain(|&_, state| {
-                let &mut ChunkState(_, ref mut i) = state;
-                *i -= 0.01;
-                *i > 0.0
+                if let &mut ChunkState(_, StateChange::Counter(ref mut i)) = state {
+                    *i -= 0.01;
+                    *i > 0.0
+                } else {
+                    true
+                }
             });
 
             // update chunk states with new
@@ -134,14 +142,25 @@ impl<'a> Renderer<'a> {
             if !chunk_changes.is_empty() {
                 for c in chunk_changes.iter() {
                     let state = if c.load {
-                        LoadState::Loading
+                        self.request_chunk_async(c.x, c.y);
+                        ChunkState(LoadState::Loading, StateChange::Counter(1.0)) // TODO Constant
                     } else {
-                        LoadState::Unloading
+                        ChunkState(LoadState::Unloading, StateChange::Counter(1.0))
                     };
-                    self.chunk_states.insert((c.x, c.y), ChunkState(state, 1.0));
+                    self.chunk_states.insert((c.x, c.y), state);
                 }
             }
-            // TODO actually load/unload
+
+            // finish loading for loaded chunks
+            while let Ok(partial) = self.load_channel.1.try_recv() {
+                match partial {
+                    Err(e) => println!("Failed to load a chunk: {}", e.description()),
+                    Ok(pw) => {
+                        self.world.finish_chunk_request(pw);
+                        // TODO get chunk coords and remove from loading state
+                    },
+                }
+            }
 
 
             self.window.clear(&background_colour);
@@ -208,7 +227,8 @@ impl<'a> Renderer<'a> {
         };
         for x in -2..3 {
             for y in -2..3 {
-                let c = if let Some(&ChunkState(ref state, i)) = self.chunk_states.get(&(x, y)) {
+                let c = if let Some(&ChunkState(ref state, ref change)) = self.chunk_states.get(&(x, y)) {
+                    let i = if let StateChange::Counter(i) = *change { i } else { 1.0 };
                     get_state_colour(&state, i)
                 } else {
                     Color::TRANSPARENT
