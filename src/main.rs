@@ -46,7 +46,8 @@ fn main() {
 enum LoadState{
     Loading,
     Unloading,
-    Unloaded
+    Unloaded,
+    Failed,
 }
 
 #[derive(Debug)]
@@ -155,7 +156,10 @@ impl<'a> Renderer<'a> {
 
                 match res {
                     Err(Error(ErrorKind::ChunkAlreadyLoaded(_), _)) => {}
-                    Err(e) => println!("Failed to load a chunk: {}", e.description()),
+                    Err(e) => {
+                        println!("Failed to load a chunk: {}", e.description());
+                        self.chunk_states.insert(coord, ChunkState(LoadState::Failed, StateChange::Constant));
+                    },
                     Ok(_) => self.world.finish_chunk_request(PartialChunk(res, coord)),
                 }
             }
@@ -194,7 +198,8 @@ impl<'a> Renderer<'a> {
             let mut c = match *state {
                 LoadState::Loading => Color::GREEN,
                 LoadState::Unloading => Color::BLUE,
-                LoadState::Unloaded => Color::RED,
+                LoadState::Unloaded => Color::BLACK,
+                LoadState::Failed => Color::RED,
             };
             c.a = (progress * 255.0) as u8;
             c
