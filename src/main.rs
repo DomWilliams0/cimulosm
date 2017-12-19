@@ -65,6 +65,8 @@ struct Renderer<'a> {
 
     render_cache: Vec<Vertex>,
     chunk_size: Vector2i,
+
+    load_new_chunks: bool,
     chunk_states: HashMap<(i32, i32), ChunkState>,
     load_channel: (Sender<world::PartialChunk>, Receiver<world::PartialChunk>),
 }
@@ -94,6 +96,7 @@ impl<'a> Renderer<'a> {
             world,
             render_cache: Vec::new(),
             chunk_size,
+            load_new_chunks: true,
             chunk_states: HashMap::new(),
             load_channel: mpsc::channel(),
         }
@@ -118,6 +121,10 @@ impl<'a> Renderer<'a> {
             while let Some(e) = self.window.poll_event() {
                 match e {
                     Event::KeyPressed { code: Key::Escape, .. } => return Ok(()),
+                    Event::KeyPressed { code: Key::Space, .. } => {
+                        self.load_new_chunks = !self.load_new_chunks;
+                        println!("Loading new chunks: {}", self.load_new_chunks);
+                    },
                     Event::KeyPressed { code, .. } => cam.handle_key(code, true),
                     Event::KeyReleased { code, .. } => cam.handle_key(code, false),
                     Event::Resized { width, height } => cam.resize(width, height),
@@ -137,7 +144,7 @@ impl<'a> Renderer<'a> {
 
             // update chunk states with new
             let chunk_changes = cam.apply(&mut self.window, self.chunk_size);
-            if !chunk_changes.is_empty() {
+            if self.load_new_chunks && !chunk_changes.is_empty() {
                 for c in chunk_changes.iter() {
                     let state = if c.load {
                         self.request_chunk_async(c.x, c.y);
