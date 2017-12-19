@@ -13,6 +13,7 @@ use sfml::graphics::*;
 use sfml::window::*;
 use sfml::system::*;
 use std::env;
+use std::collections::HashMap;
 
 mod world;
 mod error;
@@ -38,7 +39,7 @@ fn main() {
 
     let mut world = World::new(origin);
 
-    let renderer = Renderer::new(800, 500, &mut world);
+    let renderer = Renderer::new(500, 500, &mut world);
     renderer.start().unwrap();
 }
 
@@ -52,12 +53,23 @@ fn test_chunk_loading() -> error::SimResult<()> {
     Ok(())
 }
 
+#[derive(Debug)]
+enum LoadState{
+    Loading,
+    Unloading,
+    Unloaded
+}
+
+#[derive(Debug)]
+struct ChunkState(LoadState, f64);
+
 struct Renderer<'a> {
     window: RenderWindow,
     world: &'a mut World,
 
     render_cache: Vec<Vertex>,
     chunk_size: Vector2i,
+    chunk_states: HashMap<(i32, i32), ChunkState>,
 }
 
 impl<'a> Renderer<'a> {
@@ -85,6 +97,7 @@ impl<'a> Renderer<'a> {
             world,
             render_cache: Vec::new(),
             chunk_size,
+            chunk_states: HashMap::new(),
         }
     }
 
@@ -109,12 +122,24 @@ impl<'a> Renderer<'a> {
                 }
             }
 
+            // tick chunk states
+            self.chunk_states.retain(|&_, state| {
+                let &mut ChunkState(_, ref mut i) = state;
+                *i -= 0.01;
+                *i > 0.0
+            });
+
+            // update chunk states with new
             let chunk_changes = cam.apply(&mut self.window, self.chunk_size);
             if !chunk_changes.is_empty() {
                 for c in chunk_changes.iter() {
-                    println!("{} {}, {}", if c.load {"LOAD"} else {"UNLOAD"}, c.x, c.y);
+                    let state = if c.load {
+                        LoadState::Loading
+                    } else {
+                        LoadState::Unloading
+                    };
+                    self.chunk_states.insert((c.x, c.y), ChunkState(state, 1.0));
                 }
-                println!("----------");
             }
             // TODO actually load/unload
 
@@ -148,6 +173,16 @@ impl<'a> Renderer<'a> {
             }
         }
 
+        fn get_state_colour(state: &LoadState, progress: f64) -> Color {
+            let mut c = match *state {
+                LoadState::Loading => Color::GREEN,
+                LoadState::Unloading => Color::BLUE,
+                LoadState::Unloaded => Color::RED,
+            };
+            c.a = (progress * 255.0) as u8;
+            c
+        }
+
 
         for r in &self.world.loaded_roads {
             let colour = get_road_colour(&r.road_type);
@@ -173,6 +208,13 @@ impl<'a> Renderer<'a> {
         };
         for x in -2..3 {
             for y in -2..3 {
+                let c = if let Some(&ChunkState(ref state, i)) = self.chunk_states.get(&(x, y)) {
+                    get_state_colour(&state, i)
+                } else {
+                    Color::TRANSPARENT
+                };
+                rect.set_fill_color(&c);
+
                 rect.set_position((
                     (x * self.chunk_size.x) as f32,
                     (y * self.chunk_size.y) as f32)
