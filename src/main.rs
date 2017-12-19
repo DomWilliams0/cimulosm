@@ -65,7 +65,7 @@ struct Renderer<'a> {
     render_cache: Vec<Vertex>,
     chunk_size: Vector2i,
     chunk_states: HashMap<(i32, i32), ChunkState>,
-    load_channel: (Sender<SimResult<parser::PartialWorld>>, Receiver<SimResult<parser::PartialWorld>>),
+    load_channel: (Sender<world::PartialChunk>, Receiver<world::PartialChunk>),
 }
 
 impl<'a> Renderer<'a> {
@@ -140,7 +140,7 @@ impl<'a> Renderer<'a> {
                 for c in chunk_changes.iter() {
                     let state = if c.load {
                         self.request_chunk_async(c.x, c.y);
-                        ChunkState(LoadState::Loading, StateChange::Counter(1.0)) // TODO Constant
+                        ChunkState(LoadState::Loading, StateChange::Constant)
                     } else {
                         ChunkState(LoadState::Unloading, StateChange::Counter(1.0))
                     };
@@ -149,13 +149,14 @@ impl<'a> Renderer<'a> {
             }
 
             // finish loading for loaded chunks
-            while let Ok(partial) = self.load_channel.1.try_recv() {
-                match partial {
+            while let Ok(chunk) = self.load_channel.1.try_recv() {
+                let PartialChunk(res, coord) = chunk;
+                self.chunk_states.remove(&coord);
+
+                match res {
+                    Err(Error(ErrorKind::ChunkAlreadyLoaded(_), _)) => {}
                     Err(e) => println!("Failed to load a chunk: {}", e.description()),
-                    Ok(pw) => {
-                        self.world.finish_chunk_request(pw);
-                        // TODO get chunk coords and remove from loading state
-                    },
+                    Ok(_) => self.world.finish_chunk_request(PartialChunk(res, coord)),
                 }
             }
 

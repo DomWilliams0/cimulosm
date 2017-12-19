@@ -15,6 +15,10 @@ error_chain! {
     }
 
     errors {
+            ChunkAlreadyLoaded(pos: (i32, i32)) {
+                display("the chunk {:?} is already loaded", pos)
+            }
+
             OsmRequest(reason: String) {
                 display("osm request failed: {}", reason)
             }

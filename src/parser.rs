@@ -203,7 +203,7 @@ impl PartialWorld {
 
         let rel = convert_latlon(origin.lat, origin.lon);
 
-        for mut r in self.roads.values_mut() {
+        for r in self.roads.values_mut() {
             make_relative(r, &rel);
         }
 

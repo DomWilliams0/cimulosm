@@ -1,7 +1,7 @@
 use error::*;
 use std::io::{Read, Write};
 use std::{fs, env};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::mpsc;
 use std::thread;
 
@@ -28,13 +28,7 @@ pub type Id = i64;
 #[derive(Debug, Clone)]
 pub struct LatLon {
     pub lat: f64,
-    pub lon: f64
-}
-
-#[derive(Debug, Clone, Copy)]
-struct ChunkId {
-    x: i32,
-    y: i32,
+    pub lon: f64,
 }
 
 pub trait PixelVecHolder {
@@ -61,13 +55,18 @@ pub struct World {
     road_refs: HashMap<Id, u8>,
 
     // TODO use quadtree?
-    pub loaded_roads: Vec<Road>
+    pub loaded_roads: Vec<Road>,
+
+    loaded_chunks: HashMap<(i32, i32), Chunk>,
+    loading_chunks: HashSet<(i32, i32)>,
 }
 
 #[derive(Debug)]
 pub struct Chunk {
-    road_refs: Vec<Id>
+    road_refs: Vec<Id>,
 }
+
+pub struct PartialChunk(pub SimResult<parser::PartialWorld>, pub (i32, i32));
 
 impl PixelVecHolder for Road {
     fn pixels(&mut self) -> &mut Vec<Pixel> {
@@ -89,68 +88,81 @@ impl World {
         World {
             origin,
             road_refs: HashMap::new(),
-            loaded_roads: Vec::new()
+            loaded_roads: Vec::new(),
+            loaded_chunks: HashMap::new(),
+            loading_chunks: HashSet::new(),
         }
     }
 
-    pub fn request_chunk_async(&mut self,
-                          x: i32,
-                          y: i32,
-                          result_channel: mpsc::Sender<SimResult<parser::PartialWorld>>) {
+    pub fn request_chunk_async(
+        &mut self,
+        x: i32,
+        y: i32,
+        result_channel: mpsc::Sender<PartialChunk>,
+    ) {
 
-        let bounds = latlon::get_chunk_bounds(&self.origin, (x, y));
-        let loaded_already = 
+        let coord = (x, y);
+        let bounds = latlon::get_chunk_bounds(&self.origin, coord);
+        let loaded_already = self.loaded_chunks.contains_key(&coord) ||
+            self.loading_chunks.contains(&coord);
+        if !loaded_already {
+            self.loading_chunks.insert(coord);
+        }
+
         thread::spawn(move || {
-            result_channel.send(fetch_xml(&bounds).and_then(parser::parse_osm));
+            let res = if loaded_already {
+                Err(ErrorKind::ChunkAlreadyLoaded(coord).into())
+            } else {
+                fetch_xml(&bounds).and_then(parser::parse_osm)
+            };
+            result_channel.send(PartialChunk(res, coord));
         });
+
     }
 
-    pub fn finish_chunk_request(&mut self, mut partial_world: parser::PartialWorld)  {
+    pub fn finish_chunk_request(&mut self, partial_chunk: PartialChunk) {
+        let PartialChunk(mut partial_world, coord) = partial_chunk;
+        self.loading_chunks.remove(&coord);
 
-        partial_world.make_coords_relative_to(&self.origin);
+        if let Ok(mut partial_world) = partial_world {
+            partial_world.make_coords_relative_to(&self.origin);
 
-        // create chunk
-        let chunk = Chunk {
-            road_refs: partial_world.roads.keys().cloned().collect()
-        };
+            // create chunk
+            let chunk = Chunk { road_refs: partial_world.roads.keys().cloned().collect() };
 
-        // increment reference counts for all roads
-        for &id in &chunk.road_refs {
-            let count = {
-                self.road_refs.entry(id).or_insert(0)
-            };
+            // increment reference counts for all roads
+            for &id in &chunk.road_refs {
+                let count = {
+                    self.road_refs.entry(id).or_insert(0)
+                };
 
-            // first time load
-            if *count == 0 {
-                let road = partial_world.roads.remove(&id).unwrap();
-                self.loaded_roads.push(road);
-            } else {
-                println!("Incrementing road {} ref count to {}", id, *count + 1);
+                // first time load
+                if *count == 0 {
+                    let road = partial_world.roads.remove(&id).unwrap();
+                    self.loaded_roads.push(road);
+                } else {
+                    println!("Incrementing road {} ref count to {}", id, *count + 1);
+                }
+
+                *count += 1;
             }
 
-            *count += 1;
-        }
+            self.loaded_chunks.insert(coord, chunk);
 
-        // TODO do something with the Chunk
-        // TODO readd ChunkId(x, y) and add to a hashmap in world
-        // TODO then disallow loading the same chunk twice
+        }
     }
 
     pub fn request_chunk_sync(&mut self, x: i32, y: i32) -> SimResult<()> {
         let (send, recv) = mpsc::channel();
         self.request_chunk_async(x, y, send);
-        let res = recv.recv()??;
+        let res = recv.recv()?;
         self.finish_chunk_request(res);
         Ok(())
     }
 
     pub fn convert_latlon_to_pixel(&self, latlon: &LatLon) -> Pixel {
         let origin = parser::convert_latlon(self.origin.lat, self.origin.lon);
-        let point = parser::convert_latlon(
-            latlon.lat,
-            latlon.lon
-        );
-        println!("{} {} origin -> {} {}", origin.x, origin.y, point.x, point.y);
+        let point = parser::convert_latlon(latlon.lat, latlon.lon);
         Pixel {
             x: point.x - origin.x,
             y: point.y - origin.y
@@ -161,7 +173,13 @@ impl World {
 fn fetch_xml(bounds: &(LatLon, LatLon)) -> SimResult<String> {
     let cache = {
         let mut p = env::temp_dir();
-        p.push(format!("chunk_cache_{}_{}_{}_{}.osm", (bounds.1).lat, (bounds.0).lat, (bounds.1).lon, (bounds.0).lon));
+        p.push(format!(
+            "chunk_cache_{}_{}_{}_{}.osm",
+            (bounds.1).lat,
+            (bounds.0).lat,
+            (bounds.1).lon,
+            (bounds.0).lon
+        ));
         p
     };
 
@@ -171,11 +189,14 @@ fn fetch_xml(bounds: &(LatLon, LatLon)) -> SimResult<String> {
         fs::File::open(cache)?.read_to_string(&mut contents)?;
         Ok(contents)
     } else {
-        println!("Sending request for {}, {} -> {}, {}", (bounds.0).lat, (bounds.0).lon, (bounds.1).lat, (bounds.1).lon);
-        let xml = chunk_req::request_osm(
-            (bounds.0.lat, bounds.0.lon),
-            (bounds.1.lat, bounds.1.lon)
-            )?;
+        println!(
+            "Sending request for {}, {} -> {}, {}",
+            (bounds.0).lat,
+            (bounds.0).lon,
+            (bounds.1).lat,
+            (bounds.1).lon
+        );
+        let xml = chunk_req::request_osm((bounds.0.lat, bounds.0.lon), (bounds.1.lat, bounds.1.lon))?;
         println!("{} bytes read", xml.len());
         fs::File::create(cache)?.write_all(xml.as_bytes())?;
 
