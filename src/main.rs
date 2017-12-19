@@ -6,9 +6,6 @@ extern crate chunk_req;
 #[macro_use]
 extern crate error_chain;
 
-#[macro_use]
-extern crate c_str_macro;
-
 use sfml::graphics::*;
 use sfml::window::*;
 use sfml::system::*;

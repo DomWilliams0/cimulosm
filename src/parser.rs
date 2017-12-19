@@ -220,30 +220,26 @@ impl Drop for OsmWorld {
 }
 
 #[link_name = "osm"]
-extern {
+extern "C" {
     fn parse_osm_from_buffer(buffer: *const c_void, len: size_t, out: *mut OsmWorld) -> i32;
     fn free_world(world: *mut OsmWorld);
 }
 
 pub fn parse_osm(xml: String) -> SimResult<PartialWorld> {
-    fn safe_wrapper(xml: String) -> SimResult<PartialWorld> {
-        let len = xml.len();
-        let cstr = ffi::CString::new(xml)?;
-        let mut osm_world = OsmWorld::default();
+    let len = xml.len();
+    let cstr = ffi::CString::new(xml)?;
+    let mut osm_world = OsmWorld::default();
 
-        match unsafe {
-            parse_osm_from_buffer(cstr.as_ptr() as *const _, len as size_t, &mut osm_world as *mut _)
-        } {
-            0 => Ok(PartialWorld::from(osm_world)),
-            e => Err(ErrorKind::OsmParse(e).into())
-        }
+    match unsafe {
+        parse_osm_from_buffer(
+            cstr.as_ptr() as *const _,
+            len as size_t,
+            &mut osm_world as *mut _,
+        )
+    } {
+        0 => Ok(PartialWorld::from(osm_world)),
+        e => Err(ErrorKind::OsmParse(e).into()),
     }
-
-    let str_devnull = c_str!("/dev/null").as_ptr();
-    let str_w = c_str!("w").as_ptr();
-    let res = safe_wrapper(xml);
-
-    res
 }
 
 
