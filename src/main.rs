@@ -143,16 +143,18 @@ impl<'a> Renderer<'a> {
             });
 
             // update chunk states with new
-            let chunk_changes = cam.apply(&mut self.window, self.chunk_size);
-            if self.load_new_chunks && !chunk_changes.is_empty() {
-                for c in chunk_changes.iter() {
-                    let state = if c.load {
-                        self.request_chunk_async(c.x, c.y);
-                        ChunkState(LoadState::Loading, StateChange::Constant)
-                    } else {
-                        ChunkState(LoadState::Unloading, StateChange::Counter(1.0))
-                    };
-                    self.chunk_states.insert((c.x, c.y), state);
+            {
+                let chunk_changes = cam.apply(&mut self.window, self.chunk_size);
+                if self.load_new_chunks && !chunk_changes.is_empty() {
+                    for c in chunk_changes.iter() {
+                        let state = if c.load {
+                            self.request_chunk_async(c.x, c.y);
+                            ChunkState(LoadState::Loading, StateChange::Constant)
+                        } else {
+                            ChunkState(LoadState::Unloading, StateChange::Counter(1.0))
+                        };
+                        self.chunk_states.insert((c.x, c.y), state);
+                    }
                 }
             }
 
@@ -173,7 +175,7 @@ impl<'a> Renderer<'a> {
 
 
             self.window.clear(&background_colour);
-            self.render_world(&mut text);
+            self.render_world(&mut text, &cam);
             self.window.display();
         }
     }
@@ -188,7 +190,7 @@ impl<'a> Renderer<'a> {
         self.window.set_view(&view);
     }
 
-    fn render_world(&mut self, text: &mut Text) {
+    fn render_world(&mut self, text: &mut Text, cam: &CameraChange) {
         fn get_road_colour(road_type: &parser::RoadType) -> Color {
             match *road_type {
                 parser::RoadType::Motorway |
@@ -235,8 +237,8 @@ impl<'a> Renderer<'a> {
             r.set_fill_color(&Color::TRANSPARENT);
             r
         };
-        for x in -2..3 {
-            for y in -2..3 {
+        for x in cam.min_chunk.0..cam.max_chunk.0 + 1 {
+            for y in cam.min_chunk.1..cam.max_chunk.1 + 1 {
                 let c = if let Some(&ChunkState(ref state, ref change)) = self.chunk_states.get(&(x, y)) {
                     let i = if let StateChange::Counter(i) = *change { i } else { 1.0 };
                     get_state_colour(&state, i)
@@ -269,8 +271,8 @@ struct CameraChange {
     z: f64,
     dz: f64,
 
-    min_chunk: (i32, i32),
-    max_chunk: (i32, i32),
+    pub min_chunk: (i32, i32),
+    pub max_chunk: (i32, i32),
     chunk_changes: Vec<ChunkChange>,
 }
 
