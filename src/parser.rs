@@ -207,9 +207,9 @@ impl PartialWorld {
             make_relative(r, &rel);
         }
 
-        // for lu in self.land_uses.values_mut() {
-        //     make_relative(&mut lu);
-        // }
+        for lu in self.land_uses.values_mut() {
+            make_relative(lu, &rel);
+        }
     }
 }
 

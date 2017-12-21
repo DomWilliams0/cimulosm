@@ -48,14 +48,18 @@ pub struct LandUse {
     pub points: Vec<Pixel>,
 }
 
+type IdCountMap = HashMap<Id, u16>;
+
 pub struct World {
     pub origin: LatLon,
 
-    // road id -> count
-    road_refs: HashMap<Id, u8>,
+    // id -> count
+    road_refs: IdCountMap,
+    land_use_refs: IdCountMap,
 
     // TODO use quadtree?
     pub loaded_roads: Vec<Road>,
+    pub loaded_land_uses: Vec<LandUse>,
 
     loaded_chunks: HashMap<(i32, i32), Chunk>,
     loading_chunks: HashSet<(i32, i32)>,
@@ -64,6 +68,7 @@ pub struct World {
 #[derive(Debug)]
 pub struct Chunk {
     road_refs: Vec<Id>,
+    land_use_refs: Vec<Id>,
 }
 
 pub struct PartialChunk(pub SimResult<parser::PartialWorld>, pub (i32, i32));
@@ -71,6 +76,12 @@ pub struct PartialChunk(pub SimResult<parser::PartialWorld>, pub (i32, i32));
 impl PixelVecHolder for Road {
     fn pixels(&mut self) -> &mut Vec<Pixel> {
         &mut self.segments
+    }
+}
+
+impl PixelVecHolder for LandUse {
+    fn pixels(&mut self) -> &mut Vec<Pixel> {
+        &mut self.points
     }
 }
 
@@ -88,7 +99,9 @@ impl World {
         World {
             origin,
             road_refs: HashMap::new(),
+            land_use_refs: HashMap::new(),
             loaded_roads: Vec::new(),
+            loaded_land_uses: Vec::new(),
             loaded_chunks: HashMap::new(),
             loading_chunks: HashSet::new(),
         }
@@ -121,34 +134,37 @@ impl World {
     }
 
     pub fn finish_chunk_request(&mut self, partial_chunk: PartialChunk) {
-        let PartialChunk(mut partial_world, coord) = partial_chunk;
+
+        fn inc_refs<T>(chunk_refs: &[Id], world_refs: &mut IdCountMap, chunk_objs: &mut HashMap<Id, T>, world_objs: &mut Vec<T>, que: &str) {
+            for &id in chunk_refs {
+                let count = world_refs.entry(id).or_insert(0);
+
+                // first time load
+                if *count == 0 {
+                    let obj = chunk_objs.remove(&id).unwrap();
+                    world_objs.push(obj);
+                } else {
+                    println!("Incrementing {} {} ref count to {}", que, id, *count + 1);
+                }
+
+                *count += 1;
+            }
+        }
+
+        let PartialChunk(partial_world, coord) = partial_chunk;
         self.loading_chunks.remove(&coord);
 
         if let Ok(mut partial_world) = partial_world {
             partial_world.make_coords_relative_to(&self.origin);
 
             // create chunk
-            let chunk = Chunk { road_refs: partial_world.roads.keys().cloned().collect() };
+            let chunk = Chunk {
+                road_refs: partial_world.roads.keys().cloned().collect(),
+                land_use_refs: partial_world.land_uses.keys().cloned().collect(),
+            };
 
-            // increment reference counts for all roads
-            for &id in &chunk.road_refs {
-                let count = {
-                    self.road_refs.entry(id).or_insert(0)
-                };
-
-                // first time load
-                if *count == 0 {
-                    let road = partial_world.roads.remove(&id).unwrap();
-                    self.loaded_roads.push(road);
-                } else {
-                    println!("Incrementing road {} ref count to {}", id, *count + 1);
-                }
-
-                *count += 1;
-            }
-
-            self.loaded_chunks.insert(coord, chunk);
-
+            inc_refs(&chunk.road_refs, &mut self.road_refs, &mut partial_world.roads, &mut self.loaded_roads, "road");
+            inc_refs(&chunk.land_use_refs, &mut self.land_use_refs, &mut partial_world.land_uses, &mut self.loaded_land_uses, "land use");
         }
     }
 

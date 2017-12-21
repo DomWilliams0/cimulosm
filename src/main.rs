@@ -134,7 +134,7 @@ impl<'a> Renderer<'a> {
 
             // tick chunk states
             self.chunk_states.retain(|&_, state| {
-                if let &mut ChunkState(_, StateChange::Counter(ref mut i)) = state {
+                if let ChunkState(_, StateChange::Counter(ref mut i)) = *state {
                     *i -= 0.01;
                     *i > 0.0
                 } else {
@@ -202,6 +202,20 @@ impl<'a> Renderer<'a> {
                 _ => Color::rgb(255, 255, 255), // white
             }
         }
+        fn get_land_use_colour(land_use_type: &parser::LandUseType) -> Color {
+            let mut c = match *land_use_type {
+                parser::LandUseType::Residential => Color::rgb(46, 204, 113), // green
+                parser::LandUseType::Commercial => Color::rgb(243, 156, 18), // orange
+                parser::LandUseType::Agriculture => Color::rgb(211, 84, 0), // dark orange
+                parser::LandUseType::Industrial => Color::rgb(192, 57, 43), // dark red
+                parser::LandUseType::Green => Color::rgb(39, 240, 96), // more green
+                parser::LandUseType::Water => Color::rgb(41, 128, 185), // blue
+                _ => Color::rgb(255, 255, 255), // white
+            };
+
+            c.a = 40;
+            c
+        }
 
         fn get_state_colour(state: &LoadState, progress: f64) -> Color {
             let mut c = match *state {
@@ -212,6 +226,18 @@ impl<'a> Renderer<'a> {
             };
             c.a = (progress * 255.0) as u8;
             c
+        }
+
+        for lu in &self.world.loaded_land_uses {
+            let colour = get_land_use_colour(&lu.land_use_type);
+            let mut shape = ConvexShape::new(lu.points.len() as u32);
+            shape.set_fill_color(&Color::TRANSPARENT);
+            shape.set_outline_color(&colour);
+            shape.set_outline_thickness(2.0);
+            for (i, p) in lu.points.iter().enumerate() {
+                shape.set_point(i as u32, Vector2f::new(p.x as f32, p.y as f32));
+            }
+            self.window.draw(&shape);
         }
 
 
@@ -241,7 +267,7 @@ impl<'a> Renderer<'a> {
             for y in cam.min_chunk.1..cam.max_chunk.1 + 1 {
                 let c = if let Some(&ChunkState(ref state, ref change)) = self.chunk_states.get(&(x, y)) {
                     let i = if let StateChange::Counter(i) = *change { i } else { 1.0 };
-                    get_state_colour(&state, i)
+                    get_state_colour(state, i)
                 } else {
                     Color::TRANSPARENT
                 };
