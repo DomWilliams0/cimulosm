@@ -4,18 +4,17 @@ use std::{fs, env};
 use std::collections::{HashMap, HashSet};
 use std::sync::mpsc;
 use std::thread;
+use std_semaphore::Semaphore;
 
 use chunk_req;
 use parser;
 use latlon;
 
-//const CHUNK_LAT: f64 = 0.0088; // y
-//
-//const CHUNK_LON: f64 = 0.0144; // x
-//
-//const CHUNK_PAD: f64 = 0.2;
-//const CHUNK_PAD_LAT: f64 = CHUNK_LAT * CHUNK_PAD;
-//const CHUNK_PAD_LON: f64 = CHUNK_LON * CHUNK_PAD;
+const CONCURRENT_REQ_COUNT: isize = 3;
+lazy_static! {
+    static ref REQUEST_SEM: Semaphore = Semaphore::new(CONCURRENT_REQ_COUNT);
+}
+
 
 #[derive(Debug, Clone, Copy)]
 pub struct Pixel {
@@ -126,6 +125,7 @@ impl World {
             let res = if loaded_already {
                 Err(ErrorKind::ChunkAlreadyLoaded(coord).into())
             } else {
+                let _guard = REQUEST_SEM.access();
                 fetch_xml(&bounds).and_then(parser::parse_osm)
             };
             result_channel.send(PartialChunk(res, coord));

@@ -2,6 +2,10 @@
 extern crate sfml;
 extern crate libc;
 extern crate chunk_req;
+extern crate std_semaphore;
+
+#[macro_use]
+extern crate lazy_static;
 
 #[macro_use]
 extern crate error_chain;
@@ -153,7 +157,11 @@ impl<'a> Renderer<'a> {
                         } else {
                             ChunkState(LoadState::Unloading, StateChange::Counter(1.0))
                         };
-                        self.chunk_states.insert((c.x, c.y), state);
+
+                        // TODO temporarily disable unloading
+                        if let ChunkState(LoadState::Loading, _) = state {
+                            self.chunk_states.insert((c.x, c.y), state);
+                        }
                     }
                 }
             }
