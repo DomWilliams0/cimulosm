@@ -41,8 +41,35 @@ fn main() {
 
     let mut world = World::new(origin);
 
-    let renderer = Renderer::new(500, 500, &mut world);
-    renderer.start().unwrap();
+    render_png(&mut world, "/tmp/render.png", (500, 500));
+    // Renderer::new(500, 500, &mut world).start().unwrap();
+}
+
+fn render_png(world: &mut World, out_path: &'static str, dims: (u32, u32)) {
+
+    world.request_chunk_sync(0, 0).unwrap();
+    world.request_chunk_sync(0, -1).unwrap();
+
+    let mut texture = {
+        let size = Vector2f::new(dims.0 as f32, dims.1 as f32);
+        let mut t = RenderTexture::new(dims.0, dims.1, false).unwrap();
+        let mut r = RectangleShape::with_size(size);
+        r.set_fill_color(&Color::BLACK);
+        t.draw(&r);
+
+        let mut v = t.view().to_owned();
+        v.move_((size.x / -2.0, size.y / -2.0));
+        t.set_view(&v);
+
+        t
+    };
+
+    render_world(&mut texture, world, None);
+    let mut copy = texture.texture().copy_to_image().unwrap();
+    println!("Saving to {:?}", out_path);
+    copy.flip_vertically();
+    copy.save_to_file(out_path);
+
 }
 
 
@@ -199,32 +226,6 @@ impl<'a> Renderer<'a> {
     }
 
     fn render_world(&mut self, text: &mut Text, cam: &CameraChange) {
-        fn get_road_colour(road_type: &parser::RoadType) -> Color {
-            match *road_type {
-                parser::RoadType::Motorway |
-                parser::RoadType::Primary |
-                parser::RoadType::Secondary => Color::rgb(255, 50, 50), // red
-                parser::RoadType::Minor => Color::rgb(50, 50, 255), // blue
-                parser::RoadType::Pedestrian => Color::rgb(100, 100, 100), // grey
-                parser::RoadType::Residential => Color::rgb(50, 255, 50), // green
-                _ => Color::rgb(255, 255, 255), // white
-            }
-        }
-        fn get_land_use_colour(land_use_type: &parser::LandUseType) -> Color {
-            let mut c = match *land_use_type {
-                parser::LandUseType::Residential => Color::rgb(46, 204, 113), // green
-                parser::LandUseType::Commercial => Color::rgb(243, 156, 18), // orange
-                parser::LandUseType::Agriculture => Color::rgb(211, 84, 0), // dark orange
-                parser::LandUseType::Industrial => Color::rgb(192, 57, 43), // dark red
-                parser::LandUseType::Green => Color::rgb(39, 240, 96), // more green
-                parser::LandUseType::Water => Color::rgb(41, 128, 185), // blue
-                _ => Color::rgb(255, 255, 255), // white
-            };
-
-            c.a = 40;
-            c
-        }
-
         fn get_state_colour(state: &LoadState, progress: f64) -> Color {
             let mut c = match *state {
                 LoadState::Loading => Color::GREEN,
@@ -236,41 +237,20 @@ impl<'a> Renderer<'a> {
             c
         }
 
-        for lu in &self.world.loaded_land_uses {
-            let colour = get_land_use_colour(&lu.land_use_type);
-            let mut shape = ConvexShape::new(lu.points.len() as u32);
-            shape.set_fill_color(&Color::TRANSPARENT);
-            shape.set_outline_color(&colour);
-            shape.set_outline_thickness(2.0);
-            for (i, p) in lu.points.iter().enumerate() {
-                shape.set_point(i as u32, Vector2f::new(p.x as f32, p.y as f32));
-            }
-            self.window.draw(&shape);
-        }
-
-
-        for r in &self.world.loaded_roads {
-            let colour = get_road_colour(&r.road_type);
-            self.render_cache.clear();
-            self.render_cache.extend(
-                r.segments.iter().map(|s| {
-                    Vertex::with_pos_color(Vector2f::new(s.x as f32, s.y as f32), colour)
-                })
-            );
-            self.window.draw_primitives(&self.render_cache, PrimitiveType::LineStrip, RenderStates::default());
-        }
+        render_world(&mut self.window, self.world, Some(&mut self.render_cache));
 
         // chunk outlines
         let mut rect = {
             let mut r = RectangleShape::with_size(
                 Vector2f::new(self.chunk_size.x as f32, self.chunk_size.y as f32)
-            );
+                );
 
             r.set_outline_thickness(1.0);
             r.set_outline_color(&Color::WHITE);
             r.set_fill_color(&Color::TRANSPARENT);
             r
         };
+
         for x in cam.min_chunk.0..cam.max_chunk.0 + 1 {
             for y in cam.min_chunk.1..cam.max_chunk.1 + 1 {
                 let c = if let Some(&ChunkState(ref state, ref change)) = self.chunk_states.get(&(x, y)) {
@@ -282,9 +262,9 @@ impl<'a> Renderer<'a> {
                 rect.set_fill_color(&c);
 
                 rect.set_position((
-                    (x * self.chunk_size.x) as f32,
-                    (y * self.chunk_size.y) as f32)
-                );
+                        (x * self.chunk_size.x) as f32,
+                        (y * self.chunk_size.y) as f32)
+                                 );
                 self.window.draw(&rect);
 
                 text.set_string(&format!("{}, {}", x, y));
@@ -292,6 +272,60 @@ impl<'a> Renderer<'a> {
                 self.window.draw(text);
             }
         }
+    }
+}
+
+fn render_world(target: &mut RenderTarget, world: &World, render_cache: Option<&mut Vec<Vertex>>) {
+    fn get_road_colour(road_type: &parser::RoadType) -> Color {
+        match *road_type {
+            parser::RoadType::Motorway |
+            parser::RoadType::Primary |
+            parser::RoadType::Secondary => Color::rgb(255, 50, 50), // red
+            parser::RoadType::Minor => Color::rgb(50, 50, 255), // blue
+            parser::RoadType::Pedestrian => Color::rgb(100, 100, 100), // grey
+            parser::RoadType::Residential => Color::rgb(50, 255, 50), // green
+            _ => Color::rgb(255, 255, 255), // white
+        }
+    }
+    fn get_land_use_colour(land_use_type: &parser::LandUseType) -> Color {
+        let mut c = match *land_use_type {
+            parser::LandUseType::Residential => Color::rgb(46, 204, 113), // green
+            parser::LandUseType::Commercial => Color::rgb(243, 156, 18), // orange
+            parser::LandUseType::Agriculture => Color::rgb(211, 84, 0), // dark orange
+            parser::LandUseType::Industrial => Color::rgb(192, 57, 43), // dark red
+            parser::LandUseType::Green => Color::rgb(39, 240, 96), // more green
+            parser::LandUseType::Water => Color::rgb(41, 128, 185), // blue
+            _ => Color::rgb(255, 255, 255), // white
+        };
+
+        c.a = 40;
+        c
+    }
+
+    for lu in &world.loaded_land_uses {
+        let colour = get_land_use_colour(&lu.land_use_type);
+        let mut shape = ConvexShape::new(lu.points.len() as u32);
+        shape.set_fill_color(&Color::TRANSPARENT);
+        shape.set_outline_color(&colour);
+        shape.set_outline_thickness(2.0);
+        for (i, p) in lu.points.iter().enumerate() {
+            shape.set_point(i as u32, Vector2f::new(p.x as f32, p.y as f32));
+        }
+        target.draw(&shape);
+    }
+
+
+    let mut backup_vec: Vec<Vertex> = Vec::new();
+    let vertices = render_cache.unwrap_or(&mut backup_vec);
+    for r in &world.loaded_roads {
+        let colour = get_road_colour(&r.road_type);
+        vertices.clear();
+        vertices.extend(
+            r.segments.iter().map(|s| {
+                Vertex::with_pos_color(Vector2f::new(s.x as f32, s.y as f32), colour)
+            })
+            );
+        target.draw_primitives(vertices, PrimitiveType::LineStrip, RenderStates::default());
     }
 }
 
