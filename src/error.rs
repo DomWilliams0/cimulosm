@@ -1,6 +1,7 @@
 use std::io;
 use std::ffi;
 use std::sync;
+use serde_json;
 
 error_chain! {
 
@@ -12,6 +13,7 @@ error_chain! {
         Io(io::Error);
         Ffi(ffi::NulError);
         Sync(sync::mpsc::RecvError);
+        Deserialize(serde_json::Error);
     }
 
     errors {

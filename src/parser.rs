@@ -2,7 +2,7 @@ use libc::*;
 use std::{self, ffi, ptr};
 use std::collections::HashMap;
 use error::*;
-use world::{Id, Road, LandUse, Point, LatLon, PointsHolder};
+use world::{Id, Road, LandUse, Building, Point, LatLon, PointsHolder};
 use sfml::system::Vector2f;
 
 #[repr(C)]
@@ -34,7 +34,7 @@ struct OsmWorld {
 }
 
 #[repr(C)]
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub enum RoadType {
     Unknown,
     Motorway,
@@ -46,7 +46,7 @@ pub enum RoadType {
 }
 
 #[repr(C)]
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub enum LandUseType {
     Unknown,
     Residential,
@@ -174,19 +174,19 @@ impl From<OsmLandUse> for LandUse {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct PartialWorld {
-    //pub width: u32,
-    //pub height: u32,
     pub roads: HashMap<Id, Road>,
-    pub land_uses: HashMap<Id, LandUse>
+    pub land_uses: HashMap<Id, LandUse>,
+    pub buildings: HashMap<Id, Building>,
 }
 
 impl From<OsmWorld> for PartialWorld {
     fn from(w: OsmWorld) -> Self {
         PartialWorld {
             roads: convert_vec_to_map(&w.roads),
-            land_uses: convert_vec_to_map(&w.land_uses)
+            land_uses: convert_vec_to_map(&w.land_uses),
+            buildings: HashMap::new(),
         }
     }
 }

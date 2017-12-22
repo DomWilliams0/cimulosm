@@ -5,7 +5,8 @@ use std::collections::{HashMap, HashSet};
 use std::sync::mpsc;
 use std::thread;
 use std_semaphore::Semaphore;
-use std::path::PathBuf;
+use std::path::{PathBuf, Path};
+use serde_json;
 
 use chunk_req;
 use parser;
@@ -22,7 +23,7 @@ lazy_static! {
 }
 
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct Point {
     pub x: i32,
     pub y: i32
@@ -40,16 +41,21 @@ pub trait PointsHolder {
     fn pixels(&mut self) -> &mut Vec<Point>;
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Road {
     pub road_type: parser::RoadType,
     pub segments: Vec<Point>,
     pub name: String
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct LandUse {
     pub land_use_type: parser::LandUseType,
+    pub points: Vec<Point>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct Building {
     pub points: Vec<Point>,
 }
 
@@ -86,6 +92,12 @@ impl PointsHolder for Road {
 }
 
 impl PointsHolder for LandUse {
+    fn pixels(&mut self) -> &mut Vec<Point> {
+        &mut self.points
+    }
+}
+
+impl PointsHolder for Building {
     fn pixels(&mut self) -> &mut Vec<Point> {
         &mut self.points
     }
@@ -134,8 +146,7 @@ impl World {
             let res = if loaded_already {
                 Err(ErrorKind::ChunkAlreadyLoaded(coord).into())
             } else {
-                let _guard = REQUEST_SEM.access();
-                fetch_xml(dir, &bounds).and_then(parser::parse_osm)
+                attempt_load(dir, coord, &bounds)
             };
             result_channel.send(PartialChunk(res, coord));
         });
@@ -211,33 +222,84 @@ fn mkdir(file: &PathBuf) -> SimResult<()> {
     Ok(())
 }
 
-fn fetch_xml(mut world_dir: PathBuf, bounds: &(LatLon, LatLon)) -> SimResult<String> {
+fn attempt_load(world_dir: PathBuf, coord: (i32, i32), bounds: &(LatLon, LatLon)) -> SimResult<parser::PartialWorld> {
+    fn save_chunk(world_dir: &Path, coord: (i32, i32), chunk: &parser::PartialWorld) -> SimResult<()> {
+        let path = get_chunk_path(world_dir, coord);
+
+        mkdir(&path)?;
+        serde_json::to_writer(fs::File::create(path)?, &chunk)?;
+        Ok(())
+    }
+
+    fn load_chunk(world_dir: &Path, coord: (i32, i32)) -> SimResult<Option<parser::PartialWorld>> {
+        let path = get_chunk_path(world_dir, coord);
+
+        if path.is_file() {
+            println!("Loading serialized chunk from {:?}", path);
+            Ok(Some(serde_json::from_reader(fs::File::open(path)?)?))
+
+        } else {
+            Ok(None)
+        }
+    }
+
+
+    // load partial world
+    if let Ok(Some(pw)) = load_chunk(&world_dir, coord) {
+        return Ok(pw);
+    }
+
+    // load cached xml or request it
+    let loaded = parser::parse_osm(fetch_xml(&world_dir, &bounds)?);
+    if let Ok(ref chunk) = loaded {
+        save_chunk(&world_dir, coord, chunk)?;
+    }
+
+    loaded
+}
+
+fn get_chunk_path(world_dir: &Path, coord: (i32, i32)) -> PathBuf {
+    let mut p = PathBuf::from(world_dir);
+    p.push("chunks");
+    p.push(format!(
+            "r.{}.{}.bin",
+            coord.0,
+            coord.1
+            ));
+    p
+}
+
+fn fetch_xml(world_dir: &Path, bounds: &(LatLon, LatLon)) -> SimResult<String> {
     let cache = {
-        world_dir.push("osm");
-        world_dir.push(format!(
+        let mut p = PathBuf::from(world_dir);
+        p.push("osm");
+        p.push(format!(
             "{}_{}_{}_{}.osm",
             (bounds.1).lat,
             (bounds.0).lat,
             (bounds.1).lon,
             (bounds.0).lon
         ));
-        world_dir
+        p
     };
 
     if cache.is_file() {
-        println!("Loading cached chunk from {:?}", cache);
+        println!("Loading cached OSM from {:?}", cache);
         let mut contents = String::new();
         fs::File::open(cache)?.read_to_string(&mut contents)?;
         Ok(contents)
     } else {
-        println!(
-            "Sending request for {}, {} -> {}, {}",
-            (bounds.0).lat,
-            (bounds.0).lon,
-            (bounds.1).lat,
-            (bounds.1).lon
-        );
-        let xml = chunk_req::request_osm((bounds.0.lat, bounds.0.lon), (bounds.1.lat, bounds.1.lon))?;
+        let xml = {
+            let _guard = REQUEST_SEM.access();
+            println!(
+                "Sending request for {}, {} -> {}, {}",
+                (bounds.0).lat,
+                (bounds.0).lon,
+                (bounds.1).lat,
+                (bounds.1).lon
+                );
+            chunk_req::request_osm((bounds.0.lat, bounds.0.lon), (bounds.1.lat, bounds.1.lon))?
+        };
         println!("{} bytes read", xml.len());
         mkdir(&cache)?;
         fs::File::create(cache)?.write_all(xml.as_bytes())?;

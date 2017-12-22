@@ -3,6 +3,11 @@ extern crate sfml;
 extern crate libc;
 extern crate chunk_req;
 extern crate std_semaphore;
+extern crate serde;
+extern crate serde_json;
+
+#[macro_use]
+extern crate serde_derive;
 
 #[macro_use]
 extern crate lazy_static;
@@ -21,6 +26,7 @@ mod world;
 mod error;
 mod parser;
 mod latlon;
+mod building;
 
 use world::*;
 use error::*;
