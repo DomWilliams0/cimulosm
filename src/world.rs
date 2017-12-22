@@ -17,7 +17,7 @@ lazy_static! {
 
 
 #[derive(Debug, Clone, Copy)]
-pub struct Pixel {
+pub struct Point {
     pub x: i32,
     pub y: i32
 }
@@ -30,21 +30,21 @@ pub struct LatLon {
     pub lon: f64,
 }
 
-pub trait PixelVecHolder {
-    fn pixels(&mut self) -> &mut Vec<Pixel>;
+pub trait PointsHolder {
+    fn pixels(&mut self) -> &mut Vec<Point>;
 }
 
 #[derive(Debug)]
 pub struct Road {
     pub road_type: parser::RoadType,
-    pub segments: Vec<Pixel>,
+    pub segments: Vec<Point>,
     pub name: String
 }
 
 #[derive(Debug)]
 pub struct LandUse {
     pub land_use_type: parser::LandUseType,
-    pub points: Vec<Pixel>,
+    pub points: Vec<Point>,
 }
 
 type IdCountMap = HashMap<Id, u16>;
@@ -72,14 +72,14 @@ pub struct Chunk {
 
 pub struct PartialChunk(pub SimResult<parser::PartialWorld>, pub (i32, i32));
 
-impl PixelVecHolder for Road {
-    fn pixels(&mut self) -> &mut Vec<Pixel> {
+impl PointsHolder for Road {
+    fn pixels(&mut self) -> &mut Vec<Point> {
         &mut self.segments
     }
 }
 
-impl PixelVecHolder for LandUse {
-    fn pixels(&mut self) -> &mut Vec<Pixel> {
+impl PointsHolder for LandUse {
+    fn pixels(&mut self) -> &mut Vec<Point> {
         &mut self.points
     }
 }
@@ -178,10 +178,10 @@ impl World {
         Ok(())
     }
 
-    pub fn convert_latlon_to_pixel(&self, latlon: &LatLon) -> Pixel {
+    pub fn convert_latlon_to_pixel(&self, latlon: &LatLon) -> Point {
         let origin = parser::convert_latlon(self.origin.lat, self.origin.lon);
         let point = parser::convert_latlon(latlon.lat, latlon.lon);
-        Pixel {
+        Point {
             x: point.x - origin.x,
             y: point.y - origin.y
         }

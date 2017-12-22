@@ -2,7 +2,7 @@ use libc::*;
 use std::{self, ffi, ptr};
 use std::collections::HashMap;
 use error::*;
-use world::{Id, Road, LandUse, Pixel, LatLon, PixelVecHolder};
+use world::{Id, Road, LandUse, Point, LatLon, PointsHolder};
 use sfml::system::Vector2f;
 
 #[repr(C)]
@@ -137,13 +137,13 @@ fn convert_vec_to_map<T, U>(orig: &OsmVec<T>) -> HashMap<Id, U>
     m
 }
 
-fn convert_latlon_vec(orig: &OsmVec<OsmLatLon>) -> Vec<Pixel>
+fn convert_latlon_vec(orig: &OsmVec<OsmLatLon>) -> Vec<Point>
 {
     let mut v = Vec::with_capacity(orig.length as usize);
     for i in 0..orig.length {
         let d = unsafe { ptr::read(orig.data.offset(i as isize)) };
         let p = convert_latlon(d.lat, d.lon);
-        v.push(Pixel {x: p.x, y: p.y});
+        v.push(Point {x: p.x, y: p.y});
     }
     v
 }
@@ -194,7 +194,7 @@ impl From<OsmWorld> for PartialWorld {
 impl PartialWorld {
 
     pub fn make_coords_relative_to(&mut self, origin: &LatLon) {
-        fn make_relative<T: PixelVecHolder>(x: &mut T, origin: &OsmPoint) {
+        fn make_relative<T: PointsHolder>(x: &mut T, origin: &OsmPoint) {
             for p in x.pixels() {
                 (*p).x -= origin.x;
                 (*p).y -= origin.y;
