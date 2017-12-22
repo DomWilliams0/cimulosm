@@ -1,10 +1,11 @@
 use error::*;
-use std::io::{Read, Write};
+use std::io::{self, Read, Write};
 use std::{fs, env};
 use std::collections::{HashMap, HashSet};
 use std::sync::mpsc;
 use std::thread;
 use std_semaphore::Semaphore;
+use std::path::PathBuf;
 
 use chunk_req;
 use parser;
@@ -13,6 +14,11 @@ use latlon;
 const CONCURRENT_REQ_COUNT: isize = 3;
 lazy_static! {
     static ref REQUEST_SEM: Semaphore = Semaphore::new(CONCURRENT_REQ_COUNT);
+    static ref WORLD_DIR: PathBuf = {
+        let mut p = env::temp_dir();
+        p.push("worlds");
+        p
+    };
 }
 
 
@@ -51,6 +57,7 @@ type IdCountMap = HashMap<Id, u16>;
 
 pub struct World {
     pub origin: LatLon,
+    name: String,
 
     // id -> count
     road_refs: IdCountMap,
@@ -94,9 +101,10 @@ impl LatLon {
 }
 
 impl World {
-    pub fn new(origin: LatLon) -> World {
+    pub fn new(name: String, origin: LatLon) -> World {
         World {
             origin,
+            name,
             road_refs: HashMap::new(),
             land_use_refs: HashMap::new(),
             loaded_roads: Vec::new(),
@@ -121,12 +129,13 @@ impl World {
             self.loading_chunks.insert(coord);
         }
 
+        let dir = self.get_save_dir();
         thread::spawn(move || {
             let res = if loaded_already {
                 Err(ErrorKind::ChunkAlreadyLoaded(coord).into())
             } else {
                 let _guard = REQUEST_SEM.access();
-                fetch_xml(&bounds).and_then(parser::parse_osm)
+                fetch_xml(dir, &bounds).and_then(parser::parse_osm)
             };
             result_channel.send(PartialChunk(res, coord));
         });
@@ -186,19 +195,33 @@ impl World {
             y: point.y - origin.y
         }
     }
+
+    fn get_save_dir(&self) -> PathBuf {
+        let mut p = WORLD_DIR.clone();
+        p.push(&self.name);
+        p
+    }
 }
 
-fn fetch_xml(bounds: &(LatLon, LatLon)) -> SimResult<String> {
+fn mkdir(file: &PathBuf) -> SimResult<()> {
+    let dir = file.parent().ok_or_else(|| io::Error::new(io::ErrorKind::Other, "Bad file name"))?;
+    fs::DirBuilder::new()
+        .recursive(true)
+        .create(dir)?;
+    Ok(())
+}
+
+fn fetch_xml(mut world_dir: PathBuf, bounds: &(LatLon, LatLon)) -> SimResult<String> {
     let cache = {
-        let mut p = env::temp_dir();
-        p.push(format!(
-            "chunk_cache_{}_{}_{}_{}.osm",
+        world_dir.push("osm");
+        world_dir.push(format!(
+            "{}_{}_{}_{}.osm",
             (bounds.1).lat,
             (bounds.0).lat,
             (bounds.1).lon,
             (bounds.0).lon
         ));
-        p
+        world_dir
     };
 
     if cache.is_file() {
@@ -216,6 +239,7 @@ fn fetch_xml(bounds: &(LatLon, LatLon)) -> SimResult<String> {
         );
         let xml = chunk_req::request_osm((bounds.0.lat, bounds.0.lon), (bounds.1.lat, bounds.1.lon))?;
         println!("{} bytes read", xml.len());
+        mkdir(&cache)?;
         fs::File::create(cache)?.write_all(xml.as_bytes())?;
 
         Ok(xml)
