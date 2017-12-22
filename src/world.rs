@@ -165,6 +165,8 @@ impl World {
 
             inc_refs(&chunk.road_refs, &mut self.road_refs, &mut partial_world.roads, &mut self.loaded_roads, "road");
             inc_refs(&chunk.land_use_refs, &mut self.land_use_refs, &mut partial_world.land_uses, &mut self.loaded_land_uses, "land use");
+
+            self.loaded_chunks.insert(coord, chunk);
         }
     }
 
