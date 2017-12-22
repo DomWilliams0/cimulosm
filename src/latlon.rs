@@ -1,7 +1,7 @@
 use world::LatLon;
 
-const CHUNK_LAT: f64 = -0.00450;
-const CHUNK_LON: f64 = 0.0065;
+const CHUNK_LAT: f64 = -0.00650;
+const CHUNK_LON: f64 = 0.0105;
 
 //  in: world origin (top left), chunk coords
 // out: top left, bottom right of desired chunk

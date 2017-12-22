@@ -244,7 +244,7 @@ pub fn parse_osm(xml: String) -> SimResult<PartialWorld> {
 
 
 pub fn convert_latlon(lat: f64, lon: f64) -> OsmPoint {
-    const ZOOM: i32 = 23;
+    const ZOOM: i32 = 26;
     const N: f64 = (1 << ZOOM) as f64;
 
     let lat_rad = lat.to_radians();
