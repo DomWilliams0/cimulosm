@@ -47,8 +47,8 @@ fn main() {
 
     let mut world = World::new(String::from("test"), origin);
 
-    render_png(&mut world, "/tmp/render.png", (500, 500));
-    // Renderer::new(500, 500, &mut world).start().unwrap();
+     // render_png(&mut world, "/tmp/render.png", (500, 500));
+     Renderer::new(500, 500, &mut world).start().unwrap();
 }
 
 fn render_png(world: &mut World, out_path: &'static str, dims: (u32, u32)) {
